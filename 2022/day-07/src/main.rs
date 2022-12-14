@@ -9,50 +9,50 @@ fn main() {
 }
 
 #[derive(Debug, Clone)]
-enum FSNode<'str> {
+struct FSNode<'str> {
 // FileSystemNode
-    Dir(&'str str, usize, Vec<FSNode<'str>>),
-    File(&'str str, usize),
+    name: &'str str,
+    size: usize,
+    children: Option<Vec<FSNode<'str>>>,
 }
 
 impl<'str> FSNode<'str> {
+    fn new_file(name: &'str str, size: usize) -> Self {
+        FSNode { name, size, children: None }
+    }
+
+    fn new_directory(name: &'str str, size: usize, children: Vec<FSNode<'str>>) -> Self {
+        FSNode { name, size, children: Some(children) }
+    }
+
     fn size(&self) -> usize {
-        match self {
-            FSNode::Dir(.., size, _children) => *size,
-            FSNode::File(.., size) => *size,
-        }
+        self.size
     }
 
     fn add_size(&mut self, d: usize) {
-        match self {
-            FSNode::Dir(.., size, _children) => *size += d,
-            FSNode::File(.., size) => *size += d,
-        }
+        self.size += d;
     }
 
     fn name(&self) -> &'str str {
-        match self {
-            FSNode::Dir(name, ..) => name,
-            FSNode::File(name, ..) => name,
-        }
+        self.name
+    }
+
+    fn is_directory(&self) -> bool {
+        self.children.is_some()
     }
 
     fn fd(&mut self, dir_name: &'str str) -> Option<&mut FSNode<'str>> {
-        match self {
-            FSNode::File(..) => None,
-            FSNode::Dir(.., children) => 
+        self.children.as_mut().and_then(|children| {
                 children.into_iter()
-                .filter_map(|x| match x {
-                    FSNode::Dir(..) => Some(x),
-                    FSNode::File(..) => None, })
-                .find(|x| x.name() == dir_name),
-        }
+                    .filter(|node| node.children.is_some())
+                    .find(|node| node.name() == dir_name)
+        })
     }
 
     fn add_node(&mut self, node: FSNode<'str>) {
-        match self {
-            FSNode::File(..) => unreachable!(),
-            FSNode::Dir(.., children) => {
+        match &mut self.children {
+            None => unreachable!(),
+            Some(children) => {
                 assert!(!children.into_iter().any(|x| x.name() == node.name()));
                 children.push(node);
             },
@@ -62,9 +62,8 @@ impl<'str> FSNode<'str> {
     fn in_order_traverse<P>(&self, f: &mut P)
         where P: FnMut(&FSNode) -> () {
         f(self);
-        match self {
-            FSNode::Dir(.., children) => children.into_iter().for_each(|x| x.in_order_traverse(f)),
-            _ => (),
+        if let Some(children) = &self.children {
+            children.into_iter().for_each(|x| x.in_order_traverse(f));
         }
     }
 }
@@ -77,11 +76,11 @@ fn ls<'str>(current: &mut FSNode<'str>, input: &Vec<Token<'str>>, idx: &mut usiz
         match &input[*idx] {
             Token::cd(..) | Token::ls => break,
             Token::dir(name) => {
-                current.add_node(FSNode::Dir(*name, 0, vec![]));
+                current.add_node(FSNode::new_directory(*name, 0, vec![]));
                 *idx += 1;
             },
             Token::file(size, name) => {
-                current.add_node(FSNode::File(*name, *size));
+                current.add_node(FSNode::new_file(*name, *size));
                 current.add_size(*size);
                 *idx += 1;
             },
@@ -90,7 +89,7 @@ fn ls<'str>(current: &mut FSNode<'str>, input: &Vec<Token<'str>>, idx: &mut usiz
 }
 
 fn parse_all<'str>(input: &Vec<Token<'str>>) -> FSNode<'str> {
-    let mut root = FSNode::Dir("/", 0, vec![]);
+    let mut root = FSNode::new_directory("/", 0, vec![]);
     let mut i = 1;
     parse(&mut root, input, &mut i);
     // println!("{:?}", &root);
@@ -123,10 +122,9 @@ fn solve_first(input: &Vec<Token>) -> usize {
     let threshold = 100000;
     let mut sum: usize = 0;
     node.in_order_traverse(
-        &mut |n| {
-            match n {
-                FSNode::Dir(..) if n.size() <= threshold => sum += n.size(),
-                _ => (),
+        &mut |node| {
+            if node.is_directory() && node.size() <= threshold {
+                sum += node.size();
             }
         }
     );
@@ -140,10 +138,9 @@ fn solve_second(input: &Vec<Token>) -> usize {
     let required_free_space = 30000000;
     let mut smallest: usize = required_free_space;
     node.in_order_traverse(
-        &mut |n| {
-            match n {
-                FSNode::Dir(..) if n.size() + total_available >= required_free_space => smallest = smallest.min(n.size()),
-                _ => (),
+        &mut |node| {
+            if node.is_directory() && node.size() + total_available >= required_free_space {
+                smallest = smallest.min(node.size());
             }
         }
     );
@@ -164,15 +161,14 @@ enum Token<'str> {
 
 impl<'str> Token<'str> {
     fn new(line: &'str str) -> Token {
-        if line.starts_with("$ cd") {
-            Token::cd(line.split_at(5).1)
-        } else if line.starts_with("$ ls") {
-            Token::ls
-        } else if line.starts_with("dir ") {
-            Token::dir(line.split_at(4).1)
-        } else {
-            let (sz, name) = line.split_once(' ').unwrap();
-            Token::file(sz.parse::<usize>().unwrap(), name)
+        match line {
+            line if line.starts_with("$ cd") => Token::cd(line.split_at(5).1),
+            line if line.starts_with("$ ls") => Token::ls,
+            line if line.starts_with("dir ") => Token::dir(line.split_at(4).1),
+            _ => {
+                let (sz, name) = line.split_once(' ').unwrap();
+                Token::file(sz.parse::<usize>().unwrap(), name)
+            }
         }
     }
 }
