@@ -9,13 +9,13 @@ fn main() {
 }
 
 #[derive(Debug, Clone)]
-enum FSNode {
+enum FSNode<'str> {
 // FileSystemNode
-    Dir(&'static str, usize, Vec<FSNode>),
-    File(&'static str, usize),
+    Dir(&'str str, usize, Vec<FSNode<'str>>),
+    File(&'str str, usize),
 }
 
-impl FSNode {
+impl<'str> FSNode<'str> {
     fn size(&self) -> usize {
         match self {
             FSNode::Dir(.., size, _children) => *size,
@@ -30,14 +30,14 @@ impl FSNode {
         }
     }
 
-    fn name(&self) -> &'static str {
+    fn name(&self) -> &'str str {
         match self {
             FSNode::Dir(name, ..) => name,
             FSNode::File(name, ..) => name,
         }
     }
 
-    fn fd(&mut self, dir_name: &'static str) -> Option<&mut FSNode> {
+    fn fd(&mut self, dir_name: &'str str) -> Option<&mut FSNode<'str>> {
         match self {
             FSNode::File(..) => None,
             FSNode::Dir(.., children) => 
@@ -49,7 +49,7 @@ impl FSNode {
         }
     }
 
-    fn add_node(&mut self, node: FSNode) {
+    fn add_node(&mut self, node: FSNode<'str>) {
         match self {
             FSNode::File(..) => unreachable!(),
             FSNode::Dir(.., children) => {
@@ -69,7 +69,7 @@ impl FSNode {
     }
 }
 
-fn ls(current: &mut FSNode, input: &Vec<Token>, idx: &mut usize) {
+fn ls<'str>(current: &mut FSNode<'str>, input: &Vec<Token<'str>>, idx: &mut usize) {
     if *idx == input.len() {
         return;
     }
@@ -89,7 +89,7 @@ fn ls(current: &mut FSNode, input: &Vec<Token>, idx: &mut usize) {
     }
 }
 
-fn parse_all(input: &Vec<Token>) -> FSNode {
+fn parse_all<'str>(input: &Vec<Token<'str>>) -> FSNode<'str> {
     let mut root = FSNode::Dir("/", 0, vec![]);
     let mut i = 1;
     parse(&mut root, input, &mut i);
@@ -97,7 +97,7 @@ fn parse_all(input: &Vec<Token>) -> FSNode {
     return root; 
 }
 
-fn parse(current: &mut FSNode, input: &Vec<Token>, i: &mut usize) {
+fn parse<'str>(current: &mut FSNode<'str>, input: &Vec<Token<'str>>, i: &mut usize) {
     while *i != input.len() {
         match &input[*i] {
             Token::ls => { *i += 1; ls(current, input, i); },
@@ -151,19 +151,19 @@ fn solve_second(input: &Vec<Token>) -> usize {
 }
 
 #[derive(Debug)]
-enum Token {
+enum Token<'str> {
     #[allow(non_camel_case_types)]
     ls,
     #[allow(non_camel_case_types)]
-    cd(&'static str),
+    cd(&'str str),
     #[allow(non_camel_case_types)]
-    dir(&'static str),
+    dir(&'str str),
     #[allow(non_camel_case_types)]
-    file(usize, &'static str),
+    file(usize, &'str str),
 }
 
-impl Token {
-    fn new(line: &'static str) -> Token {
+impl<'str> Token<'str> {
+    fn new(line: &'str str) -> Token {
         if line.starts_with("$ cd") {
             Token::cd(line.split_at(5).1)
         } else if line.starts_with("$ ls") {
@@ -177,7 +177,7 @@ impl Token {
     }
 }
 
-fn read_input(file_content: &'static str) -> Vec<Token> {
+fn read_input(file_content: &str) -> Vec<Token> {
     file_content.lines().map(|x| Token::new(x)).collect()
 }
 
