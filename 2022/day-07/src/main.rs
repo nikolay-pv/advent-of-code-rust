@@ -9,19 +9,19 @@ fn main() {
 }
 
 #[derive(Debug, Clone)]
-struct FSNode<'str> {
+struct FSNode<'node> {
 // FileSystemNode
-    name: &'str str,
+    name: &'node str,
     size: usize,
-    children: Option<Vec<FSNode<'str>>>,
+    children: Option<Vec<FSNode<'node>>>,
 }
 
-impl<'str> FSNode<'str> {
-    fn new_file(name: &'str str, size: usize) -> Self {
+impl<'node> FSNode<'node> {
+    fn new_file(name: &'node str, size: usize) -> Self {
         FSNode { name, size, children: None }
     }
 
-    fn new_directory(name: &'str str, size: usize, children: Vec<FSNode<'str>>) -> Self {
+    fn new_directory(name: &'node str, size: usize, children: Vec<FSNode<'node>>) -> Self {
         FSNode { name, size, children: Some(children) }
     }
 
@@ -33,7 +33,7 @@ impl<'str> FSNode<'str> {
         self.size += d;
     }
 
-    fn name(&self) -> &'str str {
+    fn name(&self) -> &'node str {
         self.name
     }
 
@@ -41,7 +41,7 @@ impl<'str> FSNode<'str> {
         self.children.is_some()
     }
 
-    fn fd(&mut self, dir_name: &'str str) -> Option<&mut FSNode<'str>> {
+    fn fd(&mut self, dir_name: &'node str) -> Option<&mut FSNode<'node>> {
         self.children.as_mut().and_then(|children| {
                 children.into_iter()
                     .filter(|node| node.children.is_some())
@@ -49,7 +49,7 @@ impl<'str> FSNode<'str> {
         })
     }
 
-    fn add_node(&mut self, node: FSNode<'str>) {
+    fn add_node(&mut self, node: FSNode<'node>) {
         match &mut self.children {
             None => unreachable!(),
             Some(children) => {
@@ -59,11 +59,45 @@ impl<'str> FSNode<'str> {
         }
     }
 
-    fn in_order_traverse<P>(&self, f: &mut P)
-        where P: FnMut(&FSNode) -> () {
-        f(self);
-        if let Some(children) = &self.children {
-            children.into_iter().for_each(|x| x.in_order_traverse(f));
+    fn iter(&self) -> FSIter {
+        FSIter::new(self)
+    }
+}
+
+enum FSIterState<'node> {
+    Start,
+    CurrentNode,
+    Iter(Box<dyn Iterator<Item = &'node FSNode<'node>> + 'node>),
+}
+
+struct FSIter<'node> {
+    node: &'node FSNode<'node>,
+    state: FSIterState<'node>,
+}
+
+impl<'node> FSIter<'node> {
+    fn new(node: &'node FSNode<'node>) -> Self {
+        FSIter { node, state: FSIterState::Start }
+    }
+}
+
+impl<'node> Iterator for FSIter<'node> {
+    type Item = &'node FSNode<'node>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match &mut self.state {
+            FSIterState::Start => {
+                self.state = FSIterState::CurrentNode;
+                Some(self.node)
+            }
+            FSIterState::CurrentNode => {
+                let Some(children) = &self.node.children else {
+                    return None;
+                };
+                self.state = FSIterState::Iter(Box::new(children.into_iter().map(FSNode::iter).flatten()));
+                self.next()
+            }
+            FSIterState::Iter(iter) => iter.next(),
         }
     }
 }
@@ -120,15 +154,13 @@ fn parse<'str>(current: &mut FSNode<'str>, input: &Vec<Token<'str>>, i: &mut usi
 fn solve_first(input: &Vec<Token>) -> usize {
     let node = parse_all(&input);
     let threshold = 100000;
-    let mut sum: usize = 0;
-    node.in_order_traverse(
-        &mut |node| {
+    node.iter()
+        .filter_map(|node|{
             if node.is_directory() && node.size() <= threshold {
-                sum += node.size();
-            }
-        }
-    );
-    sum
+                Some(node.size())
+            } else { None }
+        })
+        .sum()
 }
 
 fn solve_second(input: &Vec<Token>) -> usize {
@@ -136,15 +168,13 @@ fn solve_second(input: &Vec<Token>) -> usize {
     let total_size = 70000000;
     let total_available = total_size - node.size(); // root
     let required_free_space = 30000000;
-    let mut smallest: usize = required_free_space;
-    node.in_order_traverse(
-        &mut |node| {
+    node.iter()
+        .filter_map(|node|{
             if node.is_directory() && node.size() + total_available >= required_free_space {
-                smallest = smallest.min(node.size());
-            }
-        }
-    );
-    smallest
+                Some(node.size())
+            } else { None }
+        })
+        .fold(required_free_space, |smallest, size| smallest.min(size))
 }
 
 #[derive(Debug)]
