@@ -9,67 +9,100 @@ fn main() {
 }
 
 #[derive(Debug, Clone)]
-enum FSNode {
+struct FSNode<'node> {
 // FileSystemNode
-    Dir(&'static str, usize, Vec<FSNode>),
-    File(&'static str, usize),
+    name: &'node str,
+    size: usize,
+    children: Option<Vec<FSNode<'node>>>,
 }
 
-impl FSNode {
+impl<'node> FSNode<'node> {
+    fn new_file(name: &'node str, size: usize) -> Self {
+        FSNode { name, size, children: None }
+    }
+
+    fn new_directory(name: &'node str, size: usize, children: Vec<FSNode<'node>>) -> Self {
+        FSNode { name, size, children: Some(children) }
+    }
+
     fn size(&self) -> usize {
-        match self {
-            FSNode::Dir(.., size, _children) => *size,
-            FSNode::File(.., size) => *size,
-        }
+        self.size
     }
 
     fn add_size(&mut self, d: usize) {
-        match self {
-            FSNode::Dir(.., size, _children) => *size += d,
-            FSNode::File(.., size) => *size += d,
-        }
+        self.size += d;
     }
 
-    fn name(&self) -> &'static str {
-        match self {
-            FSNode::Dir(name, ..) => name,
-            FSNode::File(name, ..) => name,
-        }
+    fn name(&self) -> &'node str {
+        self.name
     }
 
-    fn fd(&mut self, dir_name: &'static str) -> Option<&mut FSNode> {
-        match self {
-            FSNode::File(..) => None,
-            FSNode::Dir(.., children) => 
+    fn is_directory(&self) -> bool {
+        self.children.is_some()
+    }
+
+    fn fd(&mut self, dir_name: &'node str) -> Option<&mut FSNode<'node>> {
+        self.children.as_mut().and_then(|children| {
                 children.into_iter()
-                .filter_map(|x| match x {
-                    FSNode::Dir(..) => Some(x),
-                    FSNode::File(..) => None, })
-                .find(|x| x.name() == dir_name),
-        }
+                    .filter(|node| node.children.is_some())
+                    .find(|node| node.name() == dir_name)
+        })
     }
 
-    fn add_node(&mut self, node: FSNode) {
-        match self {
-            FSNode::File(..) => unreachable!(),
-            FSNode::Dir(.., children) => {
+    fn add_node(&mut self, node: FSNode<'node>) {
+        match &mut self.children {
+            None => unreachable!(),
+            Some(children) => {
                 assert!(!children.into_iter().any(|x| x.name() == node.name()));
                 children.push(node);
             },
         }
     }
 
-    fn in_order_traverse<P>(&self, f: &mut P)
-        where P: FnMut(&FSNode) -> () {
-        f(self);
-        match self {
-            FSNode::Dir(.., children) => children.into_iter().for_each(|x| x.in_order_traverse(f)),
-            _ => (),
+    fn iter(&self) -> FSIter {
+        FSIter::new(self)
+    }
+}
+
+enum FSIterState<'node> {
+    Start,
+    CurrentNode,
+    Iter(Box<dyn Iterator<Item = &'node FSNode<'node>> + 'node>),
+}
+
+struct FSIter<'node> {
+    node: &'node FSNode<'node>,
+    state: FSIterState<'node>,
+}
+
+impl<'node> FSIter<'node> {
+    fn new(node: &'node FSNode<'node>) -> Self {
+        FSIter { node, state: FSIterState::Start }
+    }
+}
+
+impl<'node> Iterator for FSIter<'node> {
+    type Item = &'node FSNode<'node>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match &mut self.state {
+            FSIterState::Start => {
+                self.state = FSIterState::CurrentNode;
+                Some(self.node)
+            }
+            FSIterState::CurrentNode => {
+                let Some(children) = &self.node.children else {
+                    return None;
+                };
+                self.state = FSIterState::Iter(Box::new(children.into_iter().map(FSNode::iter).flatten()));
+                self.next()
+            }
+            FSIterState::Iter(iter) => iter.next(),
         }
     }
 }
 
-fn ls(current: &mut FSNode, input: &Vec<Token>, idx: &mut usize) {
+fn ls<'str>(current: &mut FSNode<'str>, input: &Vec<Token<'str>>, idx: &mut usize) {
     if *idx == input.len() {
         return;
     }
@@ -77,11 +110,11 @@ fn ls(current: &mut FSNode, input: &Vec<Token>, idx: &mut usize) {
         match &input[*idx] {
             Token::cd(..) | Token::ls => break,
             Token::dir(name) => {
-                current.add_node(FSNode::Dir(*name, 0, vec![]));
+                current.add_node(FSNode::new_directory(*name, 0, vec![]));
                 *idx += 1;
             },
             Token::file(size, name) => {
-                current.add_node(FSNode::File(*name, *size));
+                current.add_node(FSNode::new_file(*name, *size));
                 current.add_size(*size);
                 *idx += 1;
             },
@@ -89,15 +122,15 @@ fn ls(current: &mut FSNode, input: &Vec<Token>, idx: &mut usize) {
     }
 }
 
-fn parse_all(input: &Vec<Token>) -> FSNode {
-    let mut root = FSNode::Dir("/", 0, vec![]);
+fn parse_all<'str>(input: &Vec<Token<'str>>) -> FSNode<'str> {
+    let mut root = FSNode::new_directory("/", 0, vec![]);
     let mut i = 1;
     parse(&mut root, input, &mut i);
     // println!("{:?}", &root);
     return root; 
 }
 
-fn parse(current: &mut FSNode, input: &Vec<Token>, i: &mut usize) {
+fn parse<'str>(current: &mut FSNode<'str>, input: &Vec<Token<'str>>, i: &mut usize) {
     while *i != input.len() {
         match &input[*i] {
             Token::ls => { *i += 1; ls(current, input, i); },
@@ -121,16 +154,13 @@ fn parse(current: &mut FSNode, input: &Vec<Token>, i: &mut usize) {
 fn solve_first(input: &Vec<Token>) -> usize {
     let node = parse_all(&input);
     let threshold = 100000;
-    let mut sum: usize = 0;
-    node.in_order_traverse(
-        &mut |n| {
-            match n {
-                FSNode::Dir(..) if n.size() <= threshold => sum += n.size(),
-                _ => (),
-            }
-        }
-    );
-    sum
+    node.iter()
+        .filter_map(|node|{
+            if node.is_directory() && node.size() <= threshold {
+                Some(node.size())
+            } else { None }
+        })
+        .sum()
 }
 
 fn solve_second(input: &Vec<Token>) -> usize {
@@ -138,46 +168,42 @@ fn solve_second(input: &Vec<Token>) -> usize {
     let total_size = 70000000;
     let total_available = total_size - node.size(); // root
     let required_free_space = 30000000;
-    let mut smallest: usize = required_free_space;
-    node.in_order_traverse(
-        &mut |n| {
-            match n {
-                FSNode::Dir(..) if n.size() + total_available >= required_free_space => smallest = smallest.min(n.size()),
-                _ => (),
-            }
-        }
-    );
-    smallest
+    node.iter()
+        .filter_map(|node|{
+            if node.is_directory() && node.size() + total_available >= required_free_space {
+                Some(node.size())
+            } else { None }
+        })
+        .fold(required_free_space, |smallest, size| smallest.min(size))
 }
 
 #[derive(Debug)]
-enum Token {
+enum Token<'str> {
     #[allow(non_camel_case_types)]
     ls,
     #[allow(non_camel_case_types)]
-    cd(&'static str),
+    cd(&'str str),
     #[allow(non_camel_case_types)]
-    dir(&'static str),
+    dir(&'str str),
     #[allow(non_camel_case_types)]
-    file(usize, &'static str),
+    file(usize, &'str str),
 }
 
-impl Token {
-    fn new(line: &'static str) -> Token {
-        if line.starts_with("$ cd") {
-            Token::cd(line.split_at(5).1)
-        } else if line.starts_with("$ ls") {
-            Token::ls
-        } else if line.starts_with("dir ") {
-            Token::dir(line.split_at(4).1)
-        } else {
-            let (sz, name) = line.split_once(' ').unwrap();
-            Token::file(sz.parse::<usize>().unwrap(), name)
+impl<'str> Token<'str> {
+    fn new(line: &'str str) -> Token {
+        match line {
+            line if line.starts_with("$ cd") => Token::cd(line.split_at(5).1),
+            line if line.starts_with("$ ls") => Token::ls,
+            line if line.starts_with("dir ") => Token::dir(line.split_at(4).1),
+            _ => {
+                let (sz, name) = line.split_once(' ').unwrap();
+                Token::file(sz.parse::<usize>().unwrap(), name)
+            }
         }
     }
 }
 
-fn read_input(file_content: &'static str) -> Vec<Token> {
+fn read_input(file_content: &str) -> Vec<Token> {
     file_content.lines().map(|x| Token::new(x)).collect()
 }
 
