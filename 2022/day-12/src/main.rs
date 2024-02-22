@@ -37,7 +37,35 @@ fn solve_first(input: &Field) -> i32 {
 }
 
 fn solve_second(input: &Field) -> i32 {
-    return input.depths.len() as i32;
+    let rows = input.depths.len();
+    let cols = input.depths.first().unwrap().len();
+
+    let mut move_counts = vec![vec![MAX; cols]; rows];
+    // walk from end to potential start
+    move_counts[input.end.0][input.end.1] = 0;
+    let mut q = VecDeque::from([input.end]);
+
+    let mut of_interest = input.start;
+    while !q.is_empty() {
+        let pos = q.pop_front().unwrap();
+        // break as soon as first 0 found
+        if input.depths[pos.0][pos.1] == 0 {
+            of_interest = pos;
+            break;
+        }
+        let current = move_counts[pos.0][pos.1] + 1;
+        neighbors(pos, rows, cols).into_iter().for_each(|elem| {
+            let n = move_counts[elem.0][elem.1].borrow_mut();
+            // this is different to solution 1: as we walk back the route
+            if (input.depths[pos.0][pos.1] - input.depths[elem.0][elem.1]) <= 1 {
+                if current < *n {
+                    *n = current;
+                    q.push_back(elem);
+                }
+            }
+        });
+    }
+    move_counts[of_interest.0][of_interest.1]
 }
 
 fn neighbors(pos: (usize, usize), rows: usize, cols: usize) -> Vec<(usize, usize)> {
@@ -94,7 +122,7 @@ mod tests {
     #[test]
     fn part2() {
         let input = read_input(TEST_INPUT_TXT);
-        assert_eq!(solve_second(&input), 5);
+        assert_eq!(solve_second(&input), 29);
     }
 }
 
