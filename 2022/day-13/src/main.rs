@@ -1,4 +1,4 @@
-use std::{iter::zip, str::Chars};
+use std::{cmp::Ordering, iter::zip, str::Chars};
 
 const INPUT_TXT: &str = include_str!("input.txt");
 
@@ -12,7 +12,7 @@ fn solve_first(input: &str) -> i32 {
         input.lines().into_iter().step_by(3),
         input.lines().into_iter().skip(1).step_by(3),
     ).enumerate().map(|(i, (left, right))|
-        if less(left, right) {
+        if less(left, right) == Ordering::Less {
             (i + 1) as i32
         } else {
             0
@@ -20,10 +20,14 @@ fn solve_first(input: &str) -> i32 {
 }
 
 fn solve_second(input: &str) -> i32 {
-    input.len() as i32
+    let mut lines: Vec<&str> = input.lines().filter(|&x| !x.is_empty()).collect();
+    lines.sort_by(|lhs, rhs| less(&lhs, &rhs));
+    let first = lines.partition_point(|x| less(&x[..], &"[[2]]") == Ordering::Less) + 1;
+    let second = lines.partition_point(|x| less(&x[..], &"[[6]]") == Ordering::Less) + 2; // +2 because indexed from 1 and to account for [[2]]
+    (first * second) as i32
 }
 
-fn less(left: &str, right: &str) -> bool {
+fn less(left: &str, right: &str) -> Ordering {
     let mut lhs = Tokenizer::new(left);
     let mut rhs = Tokenizer::new(right);
 
@@ -34,10 +38,10 @@ fn less(left: &str, right: &str) -> bool {
     loop {
         if l == None {
             assert!(l != r);
-            return true;
+            return Ordering::Less;
         }
         if r == None {
-            return false;
+            return Ordering::Greater;
         }
         match (l.unwrap(), r.unwrap()) {
             (Token::Comma, Token::Digit(_)) =>  { unreachable!(); },
@@ -60,7 +64,7 @@ fn less(left: &str, right: &str) -> bool {
                     close_right = false;
                     continue;
                 }
-                return true;
+                return Ordering::Less;
             },
             (Token::Comma, Token::ListEnd) => {
                 if close_left {
@@ -68,17 +72,17 @@ fn less(left: &str, right: &str) -> bool {
                     close_left = false;
                     continue;
                 }
-                return false;
+                return Ordering::Greater;
             },
             // one list is shorter than the other
-            (Token::ListEnd, Token::Digit(_)) => { return true; },
-            (Token::ListEnd, Token::ListStart) => { return true; },
-            (Token::Digit(_), Token::ListEnd) => { return false; },
-            (Token::ListStart, Token::ListEnd) => { return false; },
+            (Token::ListEnd, Token::Digit(_)) => { return Ordering::Less; },
+            (Token::ListEnd, Token::ListStart) => { return Ordering::Less; },
+            (Token::Digit(_), Token::ListEnd) => { return Ordering::Greater; },
+            (Token::ListStart, Token::ListEnd) => { return Ordering::Greater; },
             // normal case
             (Token::Digit(a), Token::Digit(b)) => { 
                 if a != b { 
-                    return a < b;
+                    return a.cmp(&b);
                 }
                 if close_left {
                     l = Some(Token::ListEnd);
@@ -168,13 +172,13 @@ mod tests {
     fn less_test() {
         assert_eq!(less(
             "[[1,[8]]",
-            "[[10,3,8]]"), true);
+            "[[10,3,8]]"), Ordering::Less);
         assert_eq!(less(
             "[[[5,[10,4]]]]",
-            "[[[[]],[[8]]]"), false);
+            "[[[[]],[[8]]]"), Ordering::Greater);
         assert_eq!(less(
             "[[1],2,4]",
-            "[[1],[2],3]"), false);
+            "[[1],[2],3]"), Ordering::Greater);
     }
 
     #[test]
@@ -184,7 +188,7 @@ mod tests {
 
     #[test]
     fn part2() {
-        assert_eq!(solve_second(&TEST_INPUT_TXT), 185);
+        assert_eq!(solve_second(&TEST_INPUT_TXT), 140);
     }
 }
 
