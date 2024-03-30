@@ -3,14 +3,16 @@ use std::{mem::swap, usize};
 const INPUT_TXT: &str = include_str!("input.txt");
 
 fn main() {
-    let mut input = read_input(INPUT_TXT);
+    let mut input = read_input(INPUT_TXT, false);
+    // input.print();
     println!("Answer to first parts is {}", solve_first(&mut input));
+    // input.print();
+    input = read_input(INPUT_TXT, true);
     println!("Answer to second parts is {}", solve_second(&mut input));
 }
 
 fn solve_first(input: &mut Map) -> i32 {
     let mut count = 0;
-    input.print();
     loop {
         let mut sand = input.source;
         loop {
@@ -20,6 +22,9 @@ fn solve_first(input: &mut Map) -> i32 {
                 MoveResult::Settled => {
                     input.fill(sand);
                     count += 1;
+                    if sand == input.source {
+                        return count;
+                    }
                     break;
                 },
             }
@@ -28,7 +33,7 @@ fn solve_first(input: &mut Map) -> i32 {
 }
 
 fn solve_second(input: &mut Map) -> i32 {
-    input.tiles.len() as i32
+    solve_first(input)
 }
 
 #[derive(Debug, Clone)]
@@ -105,8 +110,8 @@ impl Map {
     }
 }
 
-fn read_input(file_content: &str) -> Map {
-    let mut rocks =  Vec::<(usize, usize)>::new();
+fn read_input(file_content: &str, add_floor: bool) -> Map {
+    let mut rocks = Vec::<(usize, usize)>::new();
     // take into account 500,0 for the sand source
     let mut x_lim = (500, 500);
     let mut y_lim = (0, 0);
@@ -139,6 +144,18 @@ fn read_input(file_content: &str) -> Map {
             }
         }
     }
+    if add_floor {
+        // part2 add y_max+2 floor
+        // the size of it will be at most 2 heights of the "triangle"
+        let y_floor = y_lim.1 + 2;
+        let height = y_floor;
+        // from the source
+        for i in 500-height..=500+height {
+            rocks.push((i, y_floor));
+        }
+        x_lim = (x_lim.0.min(500-height), x_lim.1.max(500+height));
+        y_lim = (y_lim.0, y_floor);
+    }
     Map::new(rocks, x_lim, y_lim)
 }
 
@@ -150,13 +167,13 @@ mod tests {
 
     #[test]
     fn part1() {
-        let mut input = read_input(TEST_INPUT_TXT);
+        let mut input = read_input(TEST_INPUT_TXT, false);
         assert_eq!(solve_first(&mut input), 24);
     }
 
     #[test]
     fn part2() {
-        let mut input = read_input(TEST_INPUT_TXT);
+        let mut input = read_input(TEST_INPUT_TXT, true);
         assert_eq!(solve_second(&mut input), 93);
     }
 }
