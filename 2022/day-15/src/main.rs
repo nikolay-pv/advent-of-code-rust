@@ -8,12 +8,13 @@ fn main() {
     let input = read_input(INPUT_TXT);
     let y = 2000000;
     println!("Answer to first parts is {}", solve_first(&input, y));
-    println!("Answer to second parts is {}", solve_second(&input, y));
+    let limits = (0, 4000000);
+    println!("Answer to second parts is {}", solve_second(&input, limits));
 }
 
-fn solve_first(input: &Vec<SensorBeacon>, y: i32) -> i32 {
-    let mut beacons = HashSet::<(i32, i32)>::new();
-    let mut x_ranges = Vec::<(i32, i32)>::new();
+fn get_beacons_and_x_ranges(input: &Vec<SensorBeacon>, y: i64) -> (HashSet<(i64, i64)>, Vec<(i64,i64)>) {
+    let mut beacons = HashSet::<(i64, i64)>::new();
+    let mut x_ranges = Vec::<(i64, i64)>::new();
     for p in input {
         if p.beacon.1 == y {
             beacons.insert(p.beacon);
@@ -23,23 +24,47 @@ fn solve_first(input: &Vec<SensorBeacon>, y: i32) -> i32 {
         }
     }
     let merged = merge(x_ranges);
-    assert_eq!(merged.len(), 1);
-    let range = merged.first().unwrap();
+    (beacons, merged)
+}
+
+fn solve_first(input: &Vec<SensorBeacon>, y: i64) -> i64 {
+    let (beacons, x_ranges) = get_beacons_and_x_ranges(&input, y);
+    assert_eq!(x_ranges.len(), 1);
+    let range = x_ranges.first().unwrap();
     let beacons_in_range = beacons.into_iter()
         .filter(|n| &range.0 <= &n.0 && &n.0 <= &range.1)
-        .count() as i32;
+        .count() as i64;
     return range.1 - range.0 + 1 - beacons_in_range;
 }
 
-fn solve_second(input: &Vec<SensorBeacon>, y: i32) -> i32 {
-    return y * input.len() as i32;
+fn solve_second(input: &Vec<SensorBeacon>, limits: (i64, i64)) -> i64 {
+    for y in limits.0..=limits.1 {
+        let (beacons, x_ranges) = get_beacons_and_x_ranges(&input, y);
+        if x_ranges.len() == 1 {
+            continue;
+        }
+        assert_eq!(x_ranges.len(), 2);
+        let possible_range = (x_ranges.first().unwrap().1 + 1, x_ranges.last().unwrap().0 - 1);
+        let beacons_x: HashSet<i64> = beacons.into_iter().map(|x| x.0).collect();
+        let mut x = possible_range.0;
+        while x <= possible_range.1 {
+            if beacons_x.contains(&x) {
+                x += 1;
+                continue;
+            }
+            break;
+        }
+        let frequency = x * 4000000 + y;
+        return frequency;
+    }
+    unreachable!();
 }
 
-fn merge(mut ranges: Vec<(i32, i32)>) -> Vec<(i32, i32)> {
+fn merge(mut ranges: Vec<(i64, i64)>) -> Vec<(i64, i64)> {
     assert!(!ranges.is_empty());
     ranges.sort_by(|a, b| a.0.cmp(&b.0));
-    let mut range: (i32, i32) = *ranges.first().unwrap();
-    let mut result = Vec::<(i32, i32)>::new();
+    let mut range: (i64, i64) = *ranges.first().unwrap();
+    let mut result = Vec::<(i64, i64)>::new();
     for r in ranges.iter().skip(1) {
         // range.0 <= r.0 => check if one can include the other
         if r.0 <= range.1 {
@@ -55,13 +80,13 @@ fn merge(mut ranges: Vec<(i32, i32)>) -> Vec<(i32, i32)> {
 }
 
 struct SensorBeacon {
-    sensor: (i32, i32),
-    beacon: (i32, i32),
-    radius: i32
+    sensor: (i64, i64),
+    beacon: (i64, i64),
+    radius: i64
 }
 
 impl SensorBeacon {
-    fn new(x_s: i32, y_s: i32, x_b: i32, y_b: i32) -> SensorBeacon {
+    fn new(x_s: i64, y_s: i64, x_b: i64, y_b: i64) -> SensorBeacon {
         SensorBeacon{
             sensor: (x_s, y_s),
             beacon: (x_b, y_b),
@@ -70,15 +95,15 @@ impl SensorBeacon {
     }
 
     fn from_str(line: &str) -> SensorBeacon {
-        let coords: Vec<i32> = line.split_whitespace().map(|c| c.parse::<i32>().expect("Failed parsing int from input")).collect();
+        let coords: Vec<i64> = line.split_whitespace().map(|c| c.parse::<i64>().expect("Failed parsing int from input")).collect();
         SensorBeacon::new(coords[0], coords[1], coords[2], coords[3])
     }
 
-    fn is_in_range(&self, y: i32) -> bool {
+    fn is_in_range(&self, y: i64) -> bool {
         (self.sensor.1 - self.radius) <= y && y <= (self.sensor.1 + self.radius)
     }
 
-    fn get_empty_range(&self, y: i32) -> (i32, i32) {
+    fn get_empty_range(&self, y: i64) -> (i64, i64) {
         let distance = (self.sensor.1 - y).abs();
         assert!(distance <= self.radius);
         let center = self.sensor.0;
@@ -129,7 +154,8 @@ mod tests {
     #[test]
     fn part2() {
         let input = read_input(TEST_INPUT_TXT);
-        assert_eq!(solve_second(&input, 10), 70);
+        let limits = (0, 20);
+        assert_eq!(solve_second(&input, limits), 56000011);
     }
 }
 
